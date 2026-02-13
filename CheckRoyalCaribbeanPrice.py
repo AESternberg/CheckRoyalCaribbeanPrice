@@ -539,7 +539,7 @@ def getVoyages(access_token,accountId,session,apobj,cruiseLineName,reservationFr
 
         if booking.get("balanceDue") is True:
             print(YELLOW + f"{reservationDisplay}: Remaining Cruise Payment Balance is {booking.get('balanceDueAmount')}" + RESET)
-
+            
         # testing shows OBC is returned for each passenger, but really only for the stateroom
         GetOBC(access_token,accountId,session,reservationId,passengerId,shipCode,sailDate,numberOfNights,apobj,cruiseLineName,bookingCurrency)
         
@@ -562,10 +562,7 @@ def getVoyages(access_token,accountId,session,apobj,cruiseLineName,reservationFr
                 get_cruise_price(cruisePriceURL, paidPrice, apobj, True, 0)
             else:
                 print(YELLOW + "\t\tCannot Check Cruise Price - Use Manual URL Method" + RESET)
-        
-#        if booking.get("balanceDue") is True:
-#            print(YELLOW + f"{reservationDisplay}: Remaining Cruise Payment Balance is {booking.get('balanceDueAmount')}" + RESET)
-#
+
         getOrders(access_token,accountId,session,reservationId,passengerId,shipCode,sailDate,numberOfNights,apobj,cruiseLineName)
         print(" ")
         
