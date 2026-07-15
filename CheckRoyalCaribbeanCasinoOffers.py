@@ -35,8 +35,14 @@ class CasinoOffer:
     A single Club Royale casino offer parsed from the guest offers API.
 
     Captures the bookable-offer essentials a player tracks: the redemption code,
-    the offer type (a Complimentary comp is a free cruise; a GOBO discounts a
-    companion fare), the reserve-by deadline, and any FreePlay/perk sweeteners.
+    the offer type, the reserve-by deadline, and any FreePlay/perk sweeteners.
+
+    On offer type: the primary guest's fare is comped in both COMP and GOBO
+    offers. The difference is the second guest - COMP discounts (or comps) the
+    companion fare, while GOBO ("Get One, Buy One") charges the full going rate
+    - so a COMP is generally the more valuable of the two. The API's description
+    text does NOT reliably distinguish them (it is templated), so key on
+    offer_type_code, not the description.
     """
     offer_code: str
     name: str
@@ -75,7 +81,9 @@ class CasinoOffer:
 
     @property
     def is_complimentary(self) -> bool:
-        """True when the offer is a Complimentary (free cruise) comp."""
+        """True for a Complimentary (COMP) offer, where the second guest fare is
+        discounted or comped rather than full price - generally more valuable
+        than a GOBO."""
         return self.offer_type_code == "COMP"
 
     def days_until_reserve_by(self) -> Optional[int]:
@@ -229,9 +237,10 @@ def report_offers(offers: List[CasinoOffer], warn_days: int, apobj: Optional[Any
     """
     Prints every offer and alerts on those whose reserve-by deadline is near.
 
-    Complimentary (free cruise) offers are always highlighted. Offers within
-    warn_days of their reserve-by date are flagged and, if apprise is configured,
-    sent as a notification.
+    Complimentary (COMP) offers are highlighted, since their second-guest fare is
+    discounted or comped rather than full price. Offers within warn_days of their
+    reserve-by date are flagged and, if apprise is configured, sent as a
+    notification.
 
     Args:
         offers (List[CasinoOffer]): The active offers to report.
@@ -260,7 +269,8 @@ def report_offers(offers: List[CasinoOffer], warn_days: int, apobj: Optional[Any
             alerts.append((days, f"{offer.offer_code} {offer.name} [{offer.offer_type_name}] - {deadline}"
                                  + (f" +{', '.join(offer.perks)}" if offer.perks else "")))
         elif offer.is_complimentary:
-            colour, tag = YELLOW, f"{YELLOW}[COMP]{RESET} "  # free cruise, always worth noticing
+            # COMP: second guest discounted/comped vs full fare on a GOBO - worth noticing
+            colour, tag = YELLOW, f"{YELLOW}[COMP: 2nd guest discounted]{RESET} "
         else:
             colour, tag = GREEN, ""
 
