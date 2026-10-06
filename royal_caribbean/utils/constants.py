@@ -51,3 +51,8 @@ RETRY_BACKOFF_BASE = 2
 # Cool-down between accounts when checking more than one, to avoid hammering the API
 ACCOUNT_COOLDOWN_SECONDS = 5
 RESERVATION_REQUEST_INTERVAL_SECONDS = 1.0
+
+# Immutable configuration settings
+USER_AGENT_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0'
+APPKEY_WEB = 'hyNNqIPHHzaLzVpcICPdAdbFV8yvTsAm'
+

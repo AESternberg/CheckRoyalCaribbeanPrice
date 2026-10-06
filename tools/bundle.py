@@ -16,7 +16,7 @@ ROOT_DIR = TOOLS_DIR.parent
 PACKAGE_DIR = ROOT_DIR / "royal_caribbean"
 DIST_DIR = ROOT_DIR / "dist"
 
-ENTRY_POINT = ROOT_DIR / "CheckRoyalCaribbeanCasinoOffers_test.py"
+ENTRY_POINT = ROOT_DIR / "CheckRoyalCaribbeanCasinoOffers_poc.py"
 DIST_OUTPUT = DIST_DIR / "CheckRoyalCaribbeanCasinoOffers_bundled.py"
 
 MODULE_BUILD_ORDER = [

@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
-import plain_requests
-import requests
+
+try:
+    import requests as plain_requests
+except ImportError:
+    import plain_requests  # Fallback fallback
+
 import sys
 
 from typing import Tuple
@@ -14,24 +18,13 @@ from urllib.parse import quote
 from royal_caribbean.api.client import _execute_api_request
 from royal_caribbean.config.loaders import IMPERSONATE_ARGS, AccountInfo, APIAccess
 from royal_caribbean.utils.constants import (
+    APPKEY_WEB,
     EXIT_TOTAL_FAILURE,
     REQUEST_TIMEOUT,
     SHORT_REQUEST_TIMEOUT,
+    USER_AGENT_WEB
 )
 from royal_caribbean.utils.logging import RED, RESET, log, log_err
-
-USER_AGENT_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0'
-APPKEY_WEB = 'hyNNqIPHHzaLzVpcICPdAdbFV8yvTsAm'
-
-
-def new_api_session(use_impersonation: bool = True) -> plain_requests.Session:
-    """
-    Creates a network session that impersonates a real browser's TLS fingerprint
-    when curl_cffi is available and requested, falling back to standard requests.
-    """
-    if use_impersonation and IMPERSONATE_ARGS:
-        return requests.Session(**IMPERSONATE_ARGS)
-    return plain_requests.Session()
 
 
 def login(account_info: AccountInfo) -> APIAccess:

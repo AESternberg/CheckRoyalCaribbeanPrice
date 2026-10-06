@@ -56,6 +56,10 @@ class EasyLogger:
         self._logger = logger_instance
 
 
+    def set_logger(self, logger_instance: logging.Logger) -> None:
+        """Updates the internal logger instance while preserving method references."""
+        self._logger = logger_instance
+
     def __call__(self, message: Any, *args: Any, **kwargs: Any) -> None:
         """
         Maps log("text") directly to logger.info
@@ -135,7 +139,8 @@ log_err: Callable[..., None] = easy_log_instance.error
 
 def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
     """Initializes tracking environment, ANSI terminal capabilities, file captures, and stdout redirection."""
-    global log, log_warn, log_err, has_terminal_issues
+    global has_terminal_issues
+#    global log, log_warn, log_err, has_terminal_issues
 
     # 1. Determine terminal safety
     has_terminal_issues = any(k in os.environ for k in PROBLEM_ENVS)
@@ -160,9 +165,12 @@ def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
             pass
 
     # 3. Construct and clear out active root logging context
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.handlers.clear()
+    #    Use the dedicated package logger ("royal_caribbean") instead of bare root logger
+    _root_logger.setLevel(logging.INFO)
+    _root_logger.handlers.clear()
+#    root_logger = logging.getLogger()
+#    root_logger.setLevel(logging.INFO)
+#    root_logger.handlers.clear()
 
     # 4. Terminal Stream Handler (extract real stdout to prevent recursion loops)
     real_stdout = sys.stdout
@@ -174,7 +182,8 @@ def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
     if platform.system() == "iOS":
         console_handler.addFilter(StripAnsiFilter())
 
-    root_logger.addHandler(console_handler)
+    _root_logger.addHandler(console_handler)
+#    root_logger.addHandler(console_handler)
 
     # 5. Plain Text File Handler
     if log_file_path:
@@ -191,15 +200,18 @@ def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
             file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
             file_handler.setFormatter(logging.Formatter("%(message)s"))
             file_handler.addFilter(StripAnsiFilter())
-            root_logger.addHandler(file_handler)
+            _root_logger.addHandler(file_handler)
+#            root_logger.addHandler(file_handler)
         except IOError as e:
             sys.stderr.write(f"Warning: Could not open log file '{log_file_path}': {e}\n")
 
     # 6. Initialize shortcut execution instances and update module pointers
-    easy_log_instance = EasyLogger(root_logger)
-    log = easy_log_instance
-    log_warn = easy_log_instance.warn
-    log_err = easy_log_instance.error
+    easy_log_instance = EasyLogger(_root_logger)
+#    easy_log_instance = EasyLogger(root_logger)
+#    log = easy_log_instance
+#    log_warn = easy_log_instance.warn
+#    log_err = easy_log_instance.error
 
     # 7. Intercept raw standard print statements system-wide with unwrapped real stream reference
-    sys.stdout = PrintRedirector(root_logger.info, wrapped_stream=real_stdout)
+    sys.stdout = PrintRedirector(_root_logger.info, wrapped_stream=real_stdout)
+#    sys.stdout = PrintRedirector(root_logger.info, wrapped_stream=real_stdout)
