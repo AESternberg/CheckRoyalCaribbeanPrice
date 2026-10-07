@@ -8,8 +8,18 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
+
 from pathlib import Path
 from typing import Dict, List, Set
+
+# Ensure UTF-8 output encoding across Windows console environments
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
 
 TOOLS_DIR = Path(__file__).parent.resolve()
 ROOT_DIR = TOOLS_DIR.parent

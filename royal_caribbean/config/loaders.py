@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
+from royal_caribbean.utils.constants import REQUEST_TIMEOUT
 from royal_caribbean.utils.logging import RESET, YELLOW, log, setup_hybrid_logging
 
 # Optional apprise dependency handling

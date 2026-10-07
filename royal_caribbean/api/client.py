@@ -69,7 +69,8 @@ def _execute_api_request(
 
     # Resolve effective timeout: explicit override -> config setting -> default baseline
     if timeout is None:
-        timeout = getattr(config, "request_timeout", REQUEST_TIMEOUT) if 'config' in globals() else REQUEST_TIMEOUT
+        timeout = REQUEST_TIMEOUT
+#        timeout = getattr(config, "request_timeout", REQUEST_TIMEOUT) if 'config' in globals() else REQUEST_TIMEOUT
 
     # Start with caller override headers or an empty dictionary
     final_headers = headers.copy() if headers else {}
