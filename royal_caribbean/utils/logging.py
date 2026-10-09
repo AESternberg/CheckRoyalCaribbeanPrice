@@ -167,9 +167,6 @@ def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
     #    Use the dedicated package logger ("royal_caribbean") instead of bare root logger
     _root_logger.setLevel(logging.INFO)
     _root_logger.handlers.clear()
-#    root_logger = logging.getLogger()
-#    root_logger.setLevel(logging.INFO)
-#    root_logger.handlers.clear()
 
     # 4. Terminal Stream Handler (extract real stdout to prevent recursion loops)
     real_stdout = sys.stdout
@@ -204,8 +201,6 @@ def setup_hybrid_logging(log_file_path: Optional[str] = None) -> None:
 
     # 6. Update logger reference on the existing wrapper instance
     easy_log_instance.set_logger(_root_logger)
-#    # 6. Initialize shortcut execution instances and update module pointers
-#    easy_log_instance = EasyLogger(_root_logger)
 
     # 7. Intercept raw standard print statements system-wide with unwrapped real stream reference
     sys.stdout = PrintRedirector(_root_logger.info, wrapped_stream=real_stdout)

@@ -51,13 +51,9 @@ class PackageImportExtractor(ast.NodeTransformer):
         self.plain_imports: Set[str] = set()
         self.from_imports: Dict[str, Set[str]] = {}
         self.future_imports: Set[str] = set()
-        self._in_try_block: bool = False  # Track nesting depth/context
+        self._in_try_block: bool = False
 
     def visit_Try(self, node: ast.Try) -> ast.AST:
-        """Preserves try/except structures by flagging child imports so they are
-
-        not stripped or hoisted to the top level.
-        """
         previous_state = self._in_try_block
         self._in_try_block = True
         self.generic_visit(node)
@@ -65,7 +61,6 @@ class PackageImportExtractor(ast.NodeTransformer):
         return node
 
     def visit_Import(self, node: ast.Import) -> ast.AST | None:
-        # DO NOT hoist or strip imports inside try/except blocks!
         if self._in_try_block:
             return node
 
@@ -76,33 +71,27 @@ class PackageImportExtractor(ast.NodeTransformer):
                 )
                 self.plain_imports.add(name_str)
 
-        # Strip standard top-level import statements from the module body
         return None
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.AST | None:
-        # DO NOT hoist or strip imports inside try/except blocks!
         if self._in_try_block:
             return node
 
-        # Strip relative imports (. or ..)
         if node.level and node.level > 0:
             return None
 
         module_name = node.module or ""
 
-        # Ignore internal package imports
         if module_name == self.package_name or module_name.startswith(
             f"{self.package_name}."
         ):
             return None
 
-        # Capture __future__ imports separately
         if module_name == "__future__":
             for alias in node.names:
                 self.future_imports.add(alias.name)
             return None
 
-        # Collect and group external 'from' imports by module name
         if module_name not in self.from_imports:
             self.from_imports[module_name] = set()
 
@@ -112,18 +101,82 @@ class PackageImportExtractor(ast.NodeTransformer):
             )
             self.from_imports[module_name].add(name_str)
 
-        # Strip standard top-level import statements from the module body
         return None
 
 
+class AllExpander(ast.NodeTransformer):
+    """AST Transformer that replaces dynamic submodule __all__ assignments
+
+    with evaluated, static string literals in bundled output.
+    """
+
+    def __init__(self, collected_exports: set[str]):
+        super().__init__()
+        # Ensure 'main' is always present for CLI artifacts
+        self.exports = sorted(list(collected_exports | {"main"}))
+
+    def visit_Assign(self, node: ast.Assign) -> ast.AST | None:
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "__all__":
+                new_list = ast.List(
+                    elts=[ast.Constant(value=name) for name in self.exports],
+                    ctx=ast.Load(),
+                )
+                return ast.Assign(targets=node.targets, value=new_list)
+        return self.generic_visit(node)
+
+
+def extract_submodule_exports(module_path: Path) -> set[str]:
+    """Collects top-level public exports from a submodule."""
+    source = module_path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    exports: set[str] = set()
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(
+                                elt.value, str
+                            ):
+                                exports.add(elt.value)
+        elif isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            if not node.name.startswith("_"):
+                exports.add(node.name)
+
+    return exports
+
+
 def process_module(source_code: str) -> tuple[str, PackageImportExtractor]:
-    """Parses AST, extracts all imports, and returns cleaned module body code."""
+    """Parses AST, extracts imports, and returns cleaned submodule body code."""
     tree = ast.parse(source_code)
     extractor = PackageImportExtractor()
     modified_tree = extractor.visit(tree)
     ast.fix_missing_locations(modified_tree)
 
     cleaned_code = ast.unparse(modified_tree)
+    return cleaned_code, extractor
+
+
+def process_entrypoint(
+    source_code: str, collected_exports: set[str]
+) -> tuple[str, PackageImportExtractor]:
+    """Parses AST, strips package imports, and expands dynamic __all__ into static literals."""
+    tree = ast.parse(source_code)
+
+    extractor = PackageImportExtractor()
+    tree = extractor.visit(tree)
+
+    expander = AllExpander(collected_exports)
+    tree = expander.visit(tree)
+
+    ast.fix_missing_locations(tree)
+    cleaned_code = ast.unparse(tree)
+
     return cleaned_code, extractor
 
 
@@ -144,17 +197,14 @@ def build_import_header(extractors: List[PackageImportExtractor]) -> str:
 
     lines: List[str] = []
 
-    # 1. __future__ imports first
     if all_future:
         sorted_future = ", ".join(sorted(all_future))
         lines.append(f"from __future__ import {sorted_future}")
 
-    # 2. Plain imports ('import foo') sorted alphabetically
     if all_plain:
         for name in sorted(all_plain):
             lines.append(f"import {name}")
 
-    # 3. 'from foo import bar' grouped by module and sorted alphabetically
     if all_from:
         for mod in sorted(all_from.keys()):
             sorted_names = ", ".join(sorted(all_from[mod]))
@@ -171,34 +221,44 @@ def build_bundle() -> None:
 
     extractors: List[PackageImportExtractor] = []
     bundled_blocks: List[str] = []
+    collected_exports: set[str] = set()
 
     # 1. Process package modules in dependency order
     for module_path in MODULE_BUILD_ORDER:
         if not module_path.exists():
-            print(f"⚠️  Skipping missing module: {module_path.relative_to(ROOT_DIR)}")
+            print(
+                f"⚠️  Skipping missing module: {module_path.relative_to(ROOT_DIR)}"
+            )
             continue
 
-        print(f"  └─ Bundling submodule: {module_path.relative_to(ROOT_DIR)}")
+        print(
+            f"  └─ Bundling submodule: {module_path.relative_to(ROOT_DIR)}"
+        )
         source = module_path.read_text(encoding="utf-8")
+
+        # Accumulate exports for __all__ expansion
+        collected_exports.update(extract_submodule_exports(module_path))
 
         cleaned_code, extractor = process_module(source)
         extractors.append(extractor)
 
         rel_path = module_path.relative_to(ROOT_DIR)
-        block_header = f"\n# {'=' * 70}\n# MODULE: {rel_path}\n# {'=' * 70}\n"
+        block_header = (
+            f"\n# {'=' * 70}\n# MODULE: {rel_path}\n# {'=' * 70}\n"
+        )
         bundled_blocks.append(block_header + cleaned_code)
 
-    # 2. Process entry point
+    # 2. Process entry point with AllExpander
     if ENTRY_POINT.exists():
         print(f"  └─ Processing entrypoint: {ENTRY_POINT.name}")
         entry_source = ENTRY_POINT.read_text(encoding="utf-8")
 
-        cleaned_code, extractor = process_module(entry_source)
+        cleaned_code, extractor = process_entrypoint(
+            entry_source, collected_exports
+        )
         extractors.append(extractor)
 
-        block_header = (
-            f"\n# {'=' * 70}\n# MAIN ENTRYPOINT: {ENTRY_POINT.name}\n# {'=' * 70}\n"
-        )
+        block_header = f"\n# {'=' * 70}\n# MAIN ENTRYPOINT: {ENTRY_POINT.name}\n# {'=' * 70}\n"
         bundled_blocks.append(block_header + cleaned_code)
 
     # 3. Build unified header
