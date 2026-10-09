@@ -65,12 +65,16 @@ def build() -> None:
         sys.exit(f"bundle.py failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}")
 
 
+class StageError(Exception):
+    """A shape could not be staged (e.g. missing source file); reported as that shape failing."""
+
+
 def stage(script: dict, shape: str, dest: Path) -> None:
     """Copy exactly what this shape ships with, nothing else, into dest."""
     mod = script["module"]
     src = ROOT / (script["facade"] if shape == "package" else script["bundle"])
     if not src.is_file():
-        sys.exit(f"[{mod}/{shape}] missing source file: {src} (did the bundle build?)")
+        raise StageError(f"missing source file: {src} (did the bundle build?)")
     shutil.copy2(src, dest / f"{mod}.py")
     if shape == "package":
         shutil.copytree(ROOT / "royal_caribbean", dest / "royal_caribbean",
@@ -117,8 +121,6 @@ def diff_surfaces(a: dict, b: dict) -> list[str]:
         else:
             lines += [f"  only in package: {n}" for n in sorted(set(a["all"]) - set(b["all"]))]
             lines += [f"  only in bundle:  {n}" for n in sorted(set(b["all"]) - set(a["all"]))]
-    for shape, s in (("package", a), ("bundle", b)):
-        lines += [f"  unbound in {shape}: {n}" for n in s["unbound"]]
     return lines
 
 
@@ -136,52 +138,62 @@ def main(argv: list[str] | None = None) -> int:
         build()
 
     rows, failures, tmp_dirs = [], [], []
-    for script in scripts:
-        mod, results, surfaces = script["module"], {}, {}
-        for shape in SHAPES:
-            dest = Path(tempfile.mkdtemp(prefix=f"shape-{shape}-"))
-            tmp_dirs.append(dest)
-            stage(script, shape, dest)
-            results[shape] = run_pytest(script, dest)
-            surfaces[shape] = probe_surface(script, dest)
-            if not results[shape]["ok"]:
-                failures.append(f"{mod}/{shape}: pytest {results[shape]['summary']}")
-                tail = "\n".join(results[shape]["output"].strip().splitlines()[-12:])
-                print(f"--- {mod}/{shape} pytest tail ---\n{tail}\n")
-            if not surfaces[shape]["ok"]:
-                failures.append(f"{mod}/{shape}: import failed: {surfaces[shape]['error']}")
-        pkg, bun = surfaces["package"], surfaces["bundle"]
-        if pkg["ok"] and bun["ok"]:
-            diff = diff_surfaces(pkg, bun)
-            parity = "MATCH" if not diff else "DIFF"
-            if diff:
-                failures.append(f"{mod}: public surface differs\n" + "\n".join(diff))
-        else:
-            parity = "CANNOT COMPARE (import failed)"
-            failures.append(f"{mod}: parity not checked, import failed in: "
-                            + ", ".join(s for s in SHAPES if not surfaces[s]["ok"]))
-        for shape in SHAPES:
-            s = surfaces[shape]
-            size = "n/a" if not s["ok"] else ("no __all__" if s["all"] is None else str(len(s["all"])))
-            unb = "n/a" if not s["ok"] else (", ".join(s["unbound"]) or "none")
-            rows.append((mod, shape, results[shape]["summary"], size, unb, parity))
+    try:  # cleanup below always runs, even on staging errors or unexpected exceptions
+        for script in scripts:
+            mod, results, surfaces = script["module"], {}, {}
+            for shape in SHAPES:
+                dest = Path(tempfile.mkdtemp(prefix=f"shape-{shape}-"))
+                tmp_dirs.append(dest)
+                try:
+                    stage(script, shape, dest)
+                except (StageError, OSError) as exc:
+                    results[shape] = {"ok": False, "summary": f"FAIL {exc}", "output": ""}
+                    surfaces[shape] = {"ok": False, "error": str(exc)}
+                    failures.append(f"{mod}/{shape}: staging failed: {exc}")
+                    continue
+                results[shape] = run_pytest(script, dest)
+                surfaces[shape] = probe_surface(script, dest)
+                if not results[shape]["ok"]:
+                    failures.append(f"{mod}/{shape}: pytest {results[shape]['summary']}")
+                    tail = "\n".join(results[shape]["output"].strip().splitlines()[-12:])
+                    print(f"--- {mod}/{shape} pytest tail ---\n{tail}\n")
+                if not surfaces[shape]["ok"]:
+                    failures.append(f"{mod}/{shape}: import failed: {surfaces[shape]['error']}")
+                elif surfaces[shape]["unbound"]:
+                    failures.append(f"{mod}/{shape}: __all__ names not bound: " + ", ".join(surfaces[shape]["unbound"]))
+            pkg, bun = surfaces["package"], surfaces["bundle"]
+            if pkg["ok"] and bun["ok"]:
+                diff = diff_surfaces(pkg, bun)
+                parity = "MATCH" if not diff else "DIFF"
+                if diff:
+                    failures.append(f"{mod}: public surface differs\n" + "\n".join(diff))
+            else:
+                parity = "CANNOT COMPARE (import failed)"
+                failures.append(f"{mod}: parity not checked, import failed in: "
+                                + ", ".join(s for s in SHAPES if not surfaces[s]["ok"]))
+            for shape in SHAPES:
+                s = surfaces[shape]
+                size = "n/a" if not s["ok"] else ("no __all__" if s["all"] is None else str(len(s["all"])))
+                unb = "n/a" if not s["ok"] else (", ".join(s["unbound"]) or "none")
+                rows.append((mod, shape, results[shape]["summary"], size, unb, parity))
 
-    headers = ("script", "shape", "pytest", "__all__", "unbound", "parity")
-    widths = [max(len(str(r[i])) for r in [headers, *rows]) for i in range(len(headers))]
-    fmt = "  ".join("{:<%d}" % w for w in widths)
-    print(fmt.format(*headers))
-    print(fmt.format(*("-" * w for w in widths)))
-    for r in rows:
-        print(fmt.format(*r))
+        headers = ("script", "shape", "pytest", "__all__", "unbound", "parity")
+        widths = [max(len(str(r[i])) for r in [headers, *rows]) for i in range(len(headers))]
+        fmt = "  ".join("{:<%d}" % w for w in widths)
+        print(fmt.format(*headers))
+        print(fmt.format(*("-" * w for w in widths)))
+        for r in rows:
+            print(fmt.format(*r))
 
-    if failures:
-        print("\nFAILURES:\n" + "\n".join(f"- {f}" for f in failures))
-    print("\nRESULT:", "FAIL" if failures else "OK")
-    for d in tmp_dirs:
-        if args.keep:
-            print(f"kept: {d}")
-        else:
-            shutil.rmtree(d, ignore_errors=True)
+        if failures:
+            print("\nFAILURES:\n" + "\n".join(f"- {f}" for f in failures))
+        print("\nRESULT:", "FAIL" if failures else "OK")
+    finally:
+        for d in tmp_dirs:
+            if args.keep:
+                print(f"kept: {d}")
+            else:
+                shutil.rmtree(d, ignore_errors=True)
     return 1 if failures else 0
 
 
