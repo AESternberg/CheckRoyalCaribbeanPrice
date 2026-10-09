@@ -39,6 +39,11 @@ BLUE = '\033[94m'        # Bright blue text, default background, normal weight
 #YELLOW = '\033[1;33;40m' # Standard yellow text, black background, bold weight
 #BLUE = '\033[1;34;40m'   # Standard dark blue text, black background, bold weight
 
+__all__ = [
+    "log",
+    "setup_hybrid_logging",
+]
+
 
 ##################################
 # Classes (Structural and Logging)
