@@ -21,6 +21,13 @@ from royal_caribbean.utils.logging import BLUE, GREEN, RED, RESET, YELLOW, log, 
 OFFERS_API: str = "https://www.royalcaribbean.com/api/casino/v2/offers/list"
 """Club Royale casino guest offers endpoint."""
 
+__all__ = [
+    "CasinoOffer",
+    "build_account",
+    "fetch_casino_offers",
+    "report_offers",
+]
+
 
 # ==============================================================================
 # Authentication & Initialization

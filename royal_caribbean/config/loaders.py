@@ -36,6 +36,10 @@ except ImportError:
     requests = plain_requests
     IMPERSONATE_ARGS = {}
 
+__all__ = [
+    "load_config_file",
+    "build_apprise",
+]
 
 # ==============================================================================
 # Coercion Helpers

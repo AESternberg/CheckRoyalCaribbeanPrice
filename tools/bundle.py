@@ -142,11 +142,11 @@ def extract_submodule_exports(module_path: Path) -> set[str]:
                                 elt.value, str
                             ):
                                 exports.add(elt.value)
-        elif isinstance(
-            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-        ):
-            if not node.name.startswith("_"):
-                exports.add(node.name)
+#        elif isinstance(
+#            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+#        ):
+#            if not node.name.startswith("_"):
+#                exports.add(node.name)
 
     return exports
 
