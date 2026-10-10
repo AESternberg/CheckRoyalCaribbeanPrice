@@ -6,17 +6,28 @@ from __future__ import annotations
 import argparse
 
 # Clean star imports driven strictly by submodule __all__ definitions
+from royal_caribbean.models import *
 from royal_caribbean.config.loaders import *
 from royal_caribbean.core.casino import *
 from royal_caribbean.utils.logging import *
+from royal_caribbean.utils.notify import *
 
 # Submodule __all__ exports for dynamic facade surface aggregation
+from royal_caribbean.models import __all__ as _models_all
 from royal_caribbean.config.loaders import __all__ as _loaders_all
 from royal_caribbean.core.casino import __all__ as _casino_all
 from royal_caribbean.utils.logging import __all__ as _logging_all
+from royal_caribbean.utils.notify import __all__ as _notify_all
 
 # Deduplicate names while maintaining deterministic order
-__all__ = list(dict.fromkeys(_loaders_all + _casino_all + _logging_all + ["main"]))
+__all__ = list(dict.fromkeys(
+    _casino_all +
+    _loaders_all +
+    _logging_all +
+    _models_all +
+    _notify_all +
+    ["main"])
+)
 
 
 def main() -> None:

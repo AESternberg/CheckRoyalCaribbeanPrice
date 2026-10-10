@@ -16,13 +16,6 @@ from CheckRoyalCaribbeanCasinoOffers_entry import (
     load_config_file,
     report_offers,
 )
-#import CheckRoyalCaribbeanCasinoOffers as casino
-#from CheckRoyalCaribbeanCasinoOffers import (
-#    CasinoOffer,
-#    fetch_casino_offers,
-#    load_config_file,
-#    report_offers,
-#)
 
 
 def _raw(code="26TOR309", otype="COMP", reserve="2030-01-15T00:00:00.000Z", perks=("FreePlay",)):

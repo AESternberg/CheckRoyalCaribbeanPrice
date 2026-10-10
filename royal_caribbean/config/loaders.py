@@ -13,32 +13,17 @@ import re
 import yaml
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
+from royal_caribbean.models import APIAccess
 from royal_caribbean.utils.constants import REQUEST_TIMEOUT
 from royal_caribbean.utils.logging import RESET, YELLOW, log, setup_hybrid_logging
-
-# Optional apprise dependency handling
-try:
-    from apprise import Apprise, NotifyFormat, __version__ as apprise_version
-except ImportError:
-    Apprise = None
-    NotifyFormat = None
-    apprise_version = "not installed"
-
-# Optional curl_cffi dependency handling
-try:
-    from curl_cffi import requests
-    IMPERSONATE_ARGS = {"impersonate": "chrome"}
-except ImportError:
-    import requests as plain_requests
-    requests = plain_requests
-    IMPERSONATE_ARGS = {}
+from royal_caribbean.utils.notify import build_apprise
 
 __all__ = [
     "load_config_file",
-    "build_apprise",
+    "load_config_objects",
 ]
 
 # ==============================================================================
@@ -89,106 +74,8 @@ def _config_id_list(val: Any, field_name: str) -> List[str]:
 
 
 # ==============================================================================
-# Notification Utilities
-# ==============================================================================
-def build_apprise(urls: List[Dict[str, Any]] | List[str]) -> Optional[Any]:
-    """Constructs and configures an Apprise notification instance.
-
-    Args:
-        urls: List of URL strings or dictionary items containing a 'url' key.
-
-    Returns:
-        Configured Apprise instance or None if not installed or unconfigured.
-    """
-    if Apprise is None:
-        if urls:
-            log(YELLOW + "Apprise configuration found, but 'apprise' module is not installed." + RESET)
-        return None
-
-    if not urls:
-        return None
-
-    apobj = Apprise()
-    for item in urls:
-        url_str = item["url"] if isinstance(item, dict) and "url" in item else item
-        if isinstance(url_str, str) and url_str.strip():
-            apobj.add(url_str)
-
-    return apobj if len(apobj) > 0 else None
-
-
-# ==============================================================================
 # Configuration Data Classes
 # ==============================================================================
-@dataclass
-class APIAccess:
-    """Authentication session container holding current digital passport tokens.
-
-    Maintains the server-assigned user 'id', OAuth bearer token strings, and the
-    persistent network connection session pool context.
-    """
-
-    token: str
-    id: str
-    session: Any
-    loyalty_number: Optional[str] = None
-
-
-@dataclass
-class CasinoOffer:
-    """A single Club Royale casino offer parsed from the guest offers API.
-
-    Captures the bookable-offer essentials a player tracks: the redemption code,
-    the offer type, the reserve-by deadline, and any FreePlay/perk sweeteners.
-    """
-
-    offer_code: str
-    name: str
-    offer_type_code: str
-    offer_type_name: str
-    reserve_by_date: Optional[str]
-    campaign_name: str
-    status: str
-    perks: List[str] = field(default_factory=list)
-
-    @classmethod
-    def from_api(cls, raw: Dict[str, Any]) -> CasinoOffer:
-        """Builds a CasinoOffer from one element of the API 'offers' array."""
-        offer = raw.get("campaignOffer") or {}
-        offer_type = offer.get("offerType") or {}
-        perks = [
-            p.get("perkName", "")
-            for p in (offer.get("perkCodes") or [])
-            if p.get("perkName")
-        ]
-        return cls(
-            offer_code=offer.get("offerCode", "?"),
-            name=offer.get("name") or raw.get("campaignName", ""),
-            offer_type_code=offer_type.get("code", ""),
-            offer_type_name=offer_type.get("name", ""),
-            reserve_by_date=offer.get("reserveByDate"),
-            campaign_name=raw.get("campaignName", ""),
-            status=offer.get("status") or raw.get("status", ""),
-            perks=perks,
-        )
-
-    @property
-    def is_complimentary(self) -> bool:
-        """True for a Complimentary (COMP) offer."""
-        return self.offer_type_code == "COMP"
-
-    def days_until_reserve_by(self) -> Optional[int]:
-        """Whole days from now until the offer's reserve-by deadline."""
-        if not self.reserve_by_date:
-            return None
-        try:
-            date_str = self.reserve_by_date.replace("Z", "+00:00")
-            deadline = datetime.fromisoformat(date_str)
-            return (deadline - datetime.now(timezone.utc)).days
-        except (ValueError, TypeError):
-            return None
-
-
 @dataclass
 class PriceAlertExclusion:
     """Mute one product's price notifications within a reservation."""

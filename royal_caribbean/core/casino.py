@@ -7,10 +7,13 @@ and threshold-based expiration reporting/notifications.
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from royal_caribbean.api.auth import USER_AGENT_WEB, get_profile, login
-from royal_caribbean.config.loaders import AccountInfo, CasinoOffer
+from royal_caribbean.config.loaders import AccountInfo
+from royal_caribbean.models import APIAccess
 from royal_caribbean.utils.constants import EXIT_TOTAL_FAILURE
 from royal_caribbean.utils.logging import BLUE, GREEN, RED, RESET, YELLOW, log, log_err
 
@@ -27,6 +30,64 @@ __all__ = [
     "fetch_casino_offers",
     "report_offers",
 ]
+
+
+# ==============================================================================
+# Configuration Data Classes
+# ==============================================================================
+@dataclass
+class CasinoOffer:
+    """A single Club Royale casino offer parsed from the guest offers API.
+
+    Captures the bookable-offer essentials a player tracks: the redemption code,
+    the offer type, the reserve-by deadline, and any FreePlay/perk sweeteners.
+    """
+
+    offer_code: str
+    name: str
+    offer_type_code: str
+    offer_type_name: str
+    reserve_by_date: Optional[str]
+    campaign_name: str
+    status: str
+    perks: List[str] = field(default_factory=list)
+
+    @classmethod
+    def from_api(cls, raw: Dict[str, Any]) -> CasinoOffer:
+        """Builds a CasinoOffer from one element of the API 'offers' array."""
+        offer = raw.get("campaignOffer") or {}
+        offer_type = offer.get("offerType") or {}
+        perks = [
+            p.get("perkName", "")
+            for p in (offer.get("perkCodes") or [])
+            if p.get("perkName")
+        ]
+        return cls(
+            offer_code=offer.get("offerCode", "?"),
+            name=offer.get("name") or raw.get("campaignName", ""),
+            offer_type_code=offer_type.get("code", ""),
+            offer_type_name=offer_type.get("name", ""),
+            reserve_by_date=offer.get("reserveByDate"),
+            campaign_name=raw.get("campaignName", ""),
+            status=offer.get("status") or raw.get("status", ""),
+            perks=perks,
+        )
+
+    @property
+    def is_complimentary(self) -> bool:
+        """True for a Complimentary (COMP) offer."""
+        return self.offer_type_code == "COMP"
+
+    def days_until_reserve_by(self) -> Optional[int]:
+        """Whole days from now until the offer's reserve-by deadline."""
+        if not self.reserve_by_date:
+            return None
+        try:
+            date_str = self.reserve_by_date.replace("Z", "+00:00")
+            deadline = datetime.fromisoformat(date_str)
+            return (deadline - datetime.now(timezone.utc)).days
+        except (ValueError, TypeError):
+            return None
 
 
 # ==============================================================================

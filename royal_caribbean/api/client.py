@@ -11,10 +11,19 @@ import re
 import sys
 import time
 
+# Optional curl_cffi dependency handling
+try:
+    from curl_cffi import requests
+    IMPERSONATE_ARGS = {"impersonate": "chrome"}
+except ImportError:
+    import requests as plain_requests
+    requests = plain_requests
+    IMPERSONATE_ARGS = {}
+
 from typing import Any, Dict, Optional, Union
 
 # Import session setup & user agent from auth
-from royal_caribbean.config.loaders import IMPERSONATE_ARGS, AccountInfo, requests
+from royal_caribbean.config.loaders import AccountInfo
 from royal_caribbean.utils.constants import (
     APPKEY_WEB,
     DEFAULT_ON_FAILURE,
@@ -70,7 +79,6 @@ def _execute_api_request(
     # Resolve effective timeout: explicit override -> config setting -> default baseline
     if timeout is None:
         timeout = REQUEST_TIMEOUT
-#        timeout = getattr(config, "request_timeout", REQUEST_TIMEOUT) if 'config' in globals() else REQUEST_TIMEOUT
 
     # Start with caller override headers or an empty dictionary
     final_headers = headers.copy() if headers else {}

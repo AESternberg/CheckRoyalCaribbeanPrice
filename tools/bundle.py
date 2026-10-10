@@ -30,8 +30,10 @@ DIST_DIR = ROOT_DIR / "dist"
 
 # Core submodules required across CLI entrypoints
 BASE_SUBMODULES = [
+    PACKAGE_DIR / "models.py",
     PACKAGE_DIR / "utils" / "constants.py",
     PACKAGE_DIR / "utils" / "logging.py",
+    PACKAGE_DIR / "utils" / "notify.py",
     PACKAGE_DIR / "config" / "loaders.py",
     PACKAGE_DIR / "api" / "client.py",
     PACKAGE_DIR / "api" / "auth.py",
