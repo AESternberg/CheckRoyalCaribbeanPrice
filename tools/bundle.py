@@ -376,10 +376,13 @@ def main() -> None:
         "targets",
         nargs="*",
         choices=list(BUNDLE_CONFIGS.keys()) + ["all"],
-        default=["all"],
         help="Target bundle(s) to build (default: all)",
     )
     args = parser.parse_args()
+
+    # Hand-code default value to work around argparse edge-case error
+    # when using nargs="*" with choices AND a default value
+    targets = args.targets or ["all"]
 
     targets_to_build = (
         list(BUNDLE_CONFIGS.keys())
