@@ -9,13 +9,20 @@ import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-import CheckRoyalCaribbeanCasinoOffers as casino
-from CheckRoyalCaribbeanCasinoOffers import (
+import CheckRoyalCaribbeanCasinoOffers_entry as casino
+from CheckRoyalCaribbeanCasinoOffers_entry import (
     CasinoOffer,
     fetch_casino_offers,
     load_config_file,
     report_offers,
 )
+#import CheckRoyalCaribbeanCasinoOffers as casino
+#from CheckRoyalCaribbeanCasinoOffers import (
+#    CasinoOffer,
+#    fetch_casino_offers,
+#    load_config_file,
+#    report_offers,
+#)
 
 
 def _raw(code="26TOR309", otype="COMP", reserve="2030-01-15T00:00:00.000Z", perks=("FreePlay",)):

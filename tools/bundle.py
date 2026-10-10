@@ -6,12 +6,14 @@ and properly sorted top-level imports.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import re
 import sys
 
+from collections import deque
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, NamedTuple, Set
 
 # Ensure UTF-8 output encoding across Windows console environments
 if sys.platform == "win32":
@@ -26,22 +28,48 @@ ROOT_DIR = TOOLS_DIR.parent
 PACKAGE_DIR = ROOT_DIR / "royal_caribbean"
 DIST_DIR = ROOT_DIR / "dist"
 
-ENTRY_POINT = ROOT_DIR / "CheckRoyalCaribbeanCasinoOffers_poc.py"
-DIST_OUTPUT = DIST_DIR / "CheckRoyalCaribbeanCasinoOffers_bundled.py"
-
-MODULE_BUILD_ORDER = [
+# Core submodules required across CLI entrypoints
+BASE_SUBMODULES = [
     PACKAGE_DIR / "utils" / "constants.py",
     PACKAGE_DIR / "utils" / "logging.py",
     PACKAGE_DIR / "config" / "loaders.py",
     PACKAGE_DIR / "api" / "client.py",
     PACKAGE_DIR / "api" / "auth.py",
-    PACKAGE_DIR / "core" / "casino.py",
 ]
+
+
+class BundleSpec(NamedTuple):
+    name: str
+    entry_point: Path
+    dist_output: Path
+    modules: List[Path]
+
+
+# Bundle Configuration Registry
+BUNDLE_CONFIGS: Dict[str, BundleSpec] = {
+    "casino": BundleSpec(
+        name="Casino Offers Tracker",
+        entry_point=ROOT_DIR / "CheckRoyalCaribbeanCasinoOffers_entry.py",
+        dist_output=DIST_DIR / "CheckRoyalCaribbeanCasinoOffers_bundled.py",
+        modules=BASE_SUBMODULES + [PACKAGE_DIR / "core" / "casino.py"],
+    ),
+#    "browse": BundleSpec(
+#        name="Ship & Itinerary Browser",
+#        entry_point=ROOT_DIR / "BrowseRoyalCaribbeanPrice_entry.py",
+#        dist_output=DIST_DIR / "BrowseRoyalCaribbeanPrice_bundled.py",
+#        modules=BASE_SUBMODULES + [PACKAGE_DIR / "core" / "price.py"],
+#    ),
+#    "price": BundleSpec(
+#        name="Price Tracker",
+#        entry_point=ROOT_DIR / "CheckRoyalCaribbeanPrice_entry.py",
+#        dist_output=DIST_DIR / "CheckRoyalCaribbeanPrice_bundled.py",
+#        modules=BASE_SUBMODULES + [PACKAGE_DIR / "core" / "price.py"],
+#    ),
+}
 
 
 class PackageImportExtractor(ast.NodeTransformer):
     """AST Transformer to extract external imports for header deduplication while preserving
-
     imports enclosed within try/except blocks.
     """
 
@@ -106,7 +134,6 @@ class PackageImportExtractor(ast.NodeTransformer):
 
 class AllExpander(ast.NodeTransformer):
     """AST Transformer that replaces dynamic submodule __all__ assignments
-
     with evaluated, static string literals in bundled output.
     """
 
@@ -127,7 +154,7 @@ class AllExpander(ast.NodeTransformer):
 
 
 def extract_submodule_exports(module_path: Path) -> set[str]:
-    """Collects top-level public exports from a submodule."""
+    """Collects top-level public exports from a submodule ONLY if __all__ is explicitly defined."""
     source = module_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     exports: set[str] = set()
@@ -142,11 +169,6 @@ def extract_submodule_exports(module_path: Path) -> set[str]:
                                 elt.value, str
                             ):
                                 exports.add(elt.value)
-#        elif isinstance(
-#            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-#        ):
-#            if not node.name.startswith("_"):
-#                exports.add(node.name)
 
     return exports
 
@@ -213,18 +235,91 @@ def build_import_header(extractors: List[PackageImportExtractor]) -> str:
     return "\n".join(lines)
 
 
-def build_bundle() -> None:
-    """Builds the single-file distribution bundle."""
-    print(f"📦 Building standalone bundle for {ENTRY_POINT.name}...")
+def get_module_dependencies(
+    module_path: Path, package_name: str = "royal_caribbean"
+) -> Set[Path]:
+    """Inspects a Python file's AST to find all internal package modules it imports."""
+    source = module_path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    dependencies: Set[Path] = set()
+
+    for node in ast.walk(tree):
+        module_name = None
+        if isinstance(node, ast.ImportFrom) and node.module:
+            module_name = node.module
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith(f"{package_name}."):
+                    module_name = alias.name
+
+        if module_name and (
+            module_name == package_name
+            or module_name.startswith(f"{package_name}.")
+        ):
+            parts = module_name.split(".")[1:]  # strip 'royal_caribbean'
+            if parts:
+                rel_path = Path(*parts).with_suffix(".py")
+                target_path = PACKAGE_DIR / rel_path
+                if target_path.exists() and target_path != module_path:
+                    dependencies.add(target_path)
+
+    return dependencies
+
+
+def resolve_module_build_order(modules: List[Path]) -> List[Path]:
+    """Uses Kahn's Algorithm to dynamically sort modules into a dependency-safe bundle build order."""
+    module_set = set(modules)
+    graph: Dict[Path, Set[Path]] = {m: set() for m in modules}
+    in_degree: Dict[Path, int] = {m: 0 for m in modules}
+
+    for mod in modules:
+        deps = get_module_dependencies(mod) & module_set
+        for dep in deps:
+            graph[dep].add(mod)
+            in_degree[mod] += 1
+
+    queue = deque([m for m in modules if in_degree[m] == 0])
+    ordered: List[Path] = []
+
+    while queue:
+        curr = queue.popleft()
+        ordered.append(curr)
+
+        for neighbor in graph[curr]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    if len(ordered) != len(modules):
+        unresolved = [
+            m.relative_to(ROOT_DIR).as_posix()
+            for m in modules
+            if in_degree[m] > 0
+        ]
+        raise RuntimeError(
+            f"❌ Circular dependency detected in package modules! Could not order: {', '.join(unresolved)}"
+        )
+
+    return ordered
+
+
+def build_single_bundle(spec: BundleSpec) -> None:
+    """Builds a single distribution bundle according to its Spec."""
+    print(f"\n📦 Building standalone bundle: {spec.name} ({spec.entry_point.name})...")
+
+    if not spec.entry_point.exists():
+        print(f"❌ Entrypoint file not found: {spec.entry_point.relative_to(ROOT_DIR)}")
+        return
 
     DIST_DIR.mkdir(parents=True, exist_ok=True)
+
+    sorted_modules = resolve_module_build_order(spec.modules)
 
     extractors: List[PackageImportExtractor] = []
     bundled_blocks: List[str] = []
     collected_exports: set[str] = set()
 
-    # 1. Process package modules in dependency order
-    for module_path in MODULE_BUILD_ORDER:
+    for module_path in sorted_modules:
         if not module_path.exists():
             print(
                 f"⚠️  Skipping missing module: {module_path.relative_to(ROOT_DIR)}"
@@ -236,7 +331,6 @@ def build_bundle() -> None:
         )
         source = module_path.read_text(encoding="utf-8")
 
-        # Accumulate exports for __all__ expansion
         collected_exports.update(extract_submodule_exports(module_path))
 
         cleaned_code, extractor = process_module(source)
@@ -248,33 +342,52 @@ def build_bundle() -> None:
         )
         bundled_blocks.append(block_header + cleaned_code)
 
-    # 2. Process entry point with AllExpander
-    if ENTRY_POINT.exists():
-        print(f"  └─ Processing entrypoint: {ENTRY_POINT.name}")
-        entry_source = ENTRY_POINT.read_text(encoding="utf-8")
+    print(f"  └─ Processing entrypoint: {spec.entry_point.name}")
+    entry_source = spec.entry_point.read_text(encoding="utf-8")
 
-        cleaned_code, extractor = process_entrypoint(
-            entry_source, collected_exports
-        )
-        extractors.append(extractor)
+    cleaned_code, extractor = process_entrypoint(
+        entry_source, collected_exports
+    )
+    extractors.append(extractor)
 
-        block_header = f"\n# {'=' * 70}\n# MAIN ENTRYPOINT: {ENTRY_POINT.name}\n# {'=' * 70}\n"
-        bundled_blocks.append(block_header + cleaned_code)
+    block_header = f"\n# {'=' * 70}\n# MAIN ENTRYPOINT: {spec.entry_point.name}\n# {'=' * 70}\n"
+    bundled_blocks.append(block_header + cleaned_code)
 
-    # 3. Build unified header
     import_header = build_import_header(extractors)
-    header_section = f'"""Single-file distribution bundle generated by bundle.py for {ENTRY_POINT.name}."""\n\n'
+    header_section = f'"""Single-file distribution bundle generated by bundle.py for {spec.entry_point.name}."""\n\n'
     header_section += import_header + "\n\n"
 
-    # 4. Combine and write output
     full_output = header_section + "\n".join(bundled_blocks) + "\n"
     full_output = re.sub(r"\n{3,}", "\n\n", full_output)
 
-    DIST_OUTPUT.write_text(full_output, encoding="utf-8")
+    spec.dist_output.write_text(full_output, encoding="utf-8")
     print(
-        f"\n✅ Bundle successfully generated at: {DIST_OUTPUT.relative_to(ROOT_DIR)}"
+        f"✅ Bundle successfully generated at: {spec.dist_output.relative_to(ROOT_DIR)}"
     )
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Single-file distribution bundler for Royal Caribbean scripts."
+    )
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        choices=list(BUNDLE_CONFIGS.keys()) + ["all"],
+        default=["all"],
+        help="Target bundle(s) to build (default: all)",
+    )
+    args = parser.parse_args()
+
+    targets_to_build = (
+        list(BUNDLE_CONFIGS.keys())
+        if "all" in args.targets
+        else args.targets
+    )
+
+    for target in targets_to_build:
+        build_single_bundle(BUNDLE_CONFIGS[target])
+
+
 if __name__ == "__main__":
-    build_bundle()
+    main()

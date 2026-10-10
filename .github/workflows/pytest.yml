@@ -54,7 +54,8 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest unittests/ -vs --cov=CheckRoyalCaribbeanPrice --cov=BrowseRoyalCaribbeanPrice --cov-report=term-missing
+          python -m pytest unittests/ -vs --cov=royal_caribbean --cov=CheckRoyalCaribbeanPrice --cov=BrowseRoyalCaribbeanPrice --cov-report=term-missing
+#          python -m pytest unittests/ -vs --cov=CheckRoyalCaribbeanPrice --cov=BrowseRoyalCaribbeanPrice --cov-report=term-missing
 
   shapes:
     name: Package vs bundle shapes

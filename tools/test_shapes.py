@@ -33,8 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCRIPTS = [
     {
-        "module": "CheckRoyalCaribbeanCasinoOffers",  # name the tests import
-        "facade": "CheckRoyalCaribbeanCasinoOffers_poc.py",  # package entrypoint at repo root
+        "module": "CheckRoyalCaribbeanCasinoOffers_entry",  # name the tests import
+        "facade": "CheckRoyalCaribbeanCasinoOffers_entry.py",  # package entrypoint at repo root
         "bundle": "dist/CheckRoyalCaribbeanCasinoOffers_bundled.py",
         "tests": ["unittests/test_casino_offers.py"],
         "siblings": ["CheckRoyalCaribbeanPrice.py"],  # other root modules the tests import
