@@ -375,14 +375,17 @@ def main() -> None:
     parser.add_argument(
         "targets",
         nargs="*",
-        choices=list(BUNDLE_CONFIGS.keys()) + ["all"],
         help="Target bundle(s) to build (default: all)",
     )
     args = parser.parse_args()
 
-    # Hand-code default value to work around argparse edge-case error
-    # when using nargs="*" with choices AND a default value
+    # Hand-code default value and validate choices manually to work around
+    # argparse edge-case error to avoid argparse nargs='*' choice-validation bugs
     targets = args.targets or ["all"]
+    valid_choices = list(BUNDLE_CONFIGS.keys()) + ["all"]
+    for target in targets:
+        if target not in valid_choices:
+            parser.error(f"argument targets: invalid choice: {target!r} (choose from {', '.join(map(repr, valid_choices))})")
 
     targets_to_build = (
         list(BUNDLE_CONFIGS.keys())
